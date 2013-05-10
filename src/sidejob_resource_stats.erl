@@ -104,8 +104,8 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info(tick, State) ->
-    State2 = tick(State),
     schedule_tick(),
+    State2 = tick(State),
     {noreply, State2};
 
 handle_info(_Info, State) ->
@@ -146,7 +146,7 @@ tick(State=#state{stats_ets=StatsETS,
 
     State3 = case Left60 of
                  0 ->
-                     State2#state{left_60s=60,
+                     State2#state{left_60s=59,
                                   stats_60s=NewNext60,
                                   next_stats_60s=sidejob_stat:new()};
                  _ ->
@@ -174,7 +174,7 @@ compute(#state{usage=Usage, rejected=Rejected, in=In, out=Out,
     [{usage, Usage},
      {rejected, Rejected},
      {in_rate, In},
-     {out_out, Out},
+     {out_rate, Out},
      {usage_60s, Usage60},
      {rejected_60s, Rejected60},
      {avg_in_rate_60s, InAvg60},

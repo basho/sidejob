@@ -44,7 +44,9 @@ load_config(Resource, Config) ->
     Forms = erl_syntax:revert_forms(Abstract),
     {ok, Resource, Bin} = compile:forms(Forms, [verbose, report_errors]),
     code:purge(Resource),
-    code:load_binary(Resource, atom_to_list(Resource) ++ ".erl", Bin),
+    {module, Resource} = code:load_binary(Resource,
+                                          atom_to_list(Resource) ++ ".erl",
+                                          Bin),
     ok.
 
 make_module(Module) ->
