@@ -108,7 +108,7 @@ available(Name, ETS, Width, Limit, X, End) ->
     Worker = X rem Width,
     case is_available(ETS, Limit, Worker) of
         false ->
-            available(Name, ETS, Width, Limit, Worker+1, End);
+            available(Name, ETS, Width, Limit, (Worker+1) rem Width, End);
         true ->
             worker_reg_name(Name, Worker)
     end.
