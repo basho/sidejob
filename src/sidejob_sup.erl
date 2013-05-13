@@ -21,7 +21,7 @@
 %% @doc
 %% The top-level supervisor for the sidejob application.
 %%
-%% When a new resource is created via {@link sidejob:new_resource/4),
+%% When a new resource is created via {@link sidejob:new_resource/4},
 %% a new {@link sidejob_resource_sup} is added to this supervisor.
 %%
 %% The actual resource supervisor manages a given resource's process

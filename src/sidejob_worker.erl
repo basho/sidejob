@@ -32,7 +32,7 @@
 %%
 %% By default, a sidejob_worker calculates resource usage based on message
 %% queue size. However, the user-specified module can also choose to
-%% implement the `current_usage/1` and `rate/1` callbacks to change how
+%% implement the `current_usage/1' and `rate/1' callbacks to change how
 %% usage is calculated. An example is the {@link sidejob_supervisor} module
 %% which reports usage as: queue size + num_children.
 
