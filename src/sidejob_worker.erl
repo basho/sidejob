@@ -106,6 +106,7 @@ init([ResName, Id, ETS, StatsName, Mod]) ->
                            width=Width,
                            limit=Limit,
                            reporter=StatsName},
+            ets:insert(ETS, [{Id - 1, 0}, {{full, Id - 1}, 0}]),
             {ok, State};
         Other ->
             Other
