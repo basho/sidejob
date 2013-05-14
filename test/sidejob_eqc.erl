@@ -8,6 +8,7 @@
 
 -include_lib("eqc/include/eqc_statem.hrl").
 -include_lib("eqc/include/eqc.hrl").
+-include_lib("pulse/include/pulse.hrl").
 
 -record(state, {limit, width, restarts = 0, workers = []}).
 -record(worker, {pid, scheduler, queue, status = ready, cmd}).
@@ -115,7 +116,7 @@ get_status_next(S, V, [WPid]) ->
       {finished, _} -> stopped;
       blocked       -> blocked;
       zombie        -> zombie;
-      working       -> {working, {call, erlang, element, [2, V]}}
+      working       -> {working, {call, ?MODULE, get_element, [2, V]}}
     end,
   set_worker_status(S, WPid, NewStatus).
 
@@ -132,6 +133,7 @@ get_status_post(S, [WPid], R) ->
   end.
 
 %% -- finish
+finish_work(bad_element) -> ok;
 finish_work(Pid) ->
   Pid ! finish,
   timer:sleep(?SLEEP).
@@ -155,6 +157,7 @@ finish_work_next(S, _, [Pid]) ->
   wakeup_worker(set_worker_status(S, W#worker.pid, Status), W#worker.queue).
 
 %. -- crash
+crash(bad_element) -> ok;
 crash(Pid) ->
   Pid ! crash,
   timer:sleep(?SLEEP).
@@ -290,19 +293,72 @@ prop_test() ->
       R == ok))
   end))).
 
+prop_par() ->
+  ?FORALL(Cmds, parallel_commands(?MODULE),
+  ?TIMEOUT(?TIMEOUT,
+  % ?SOMETIMES(4,
+  begin
+    cleanup(),
+    HSR={SeqH, ParH, R} = run_parallel_commands(?MODULE, Cmds),
+    kill_all_pids({SeqH, ParH}),
+    aggregate(command_names(Cmds),
+    pretty_commands(?MODULE, Cmds, HSR,
+      R == ok))
+  end)).
+
+prop_pulse() ->
+  ?SETUP(fun() -> N = erlang:system_flag(schedulers_online, 1),
+                  fun() -> erlang:system_flag(schedulers_online, N) end end,
+  ?FORALL(Cmds, parallel_commands(?MODULE),
+  ?PULSE(HSR={_, _, R},
+    begin
+      cleanup(),
+      run_parallel_commands(?MODULE, Cmds)
+    end,
+    aggregate(command_names(Cmds),
+    pretty_commands(?MODULE, Cmds, HSR,
+      R == ok))))).
+
+kill_all_pids(Pid) when is_pid(Pid) -> exit(Pid, kill);
+kill_all_pids([H|T])                -> kill_all_pids(H), kill_all_pids(T);
+kill_all_pids(T) when is_tuple(T)   -> kill_all_pids(tuple_to_list(T));
+kill_all_pids(_)                    -> ok.
+
 cleanup() ->
   error_logger:tty(false),
   (catch application:stop(sidejob)),
   % error_logger:tty(true),
   application:start(sidejob).
 
+the_prop() ->
+  prop_par().
+
 test(N) ->
-  quickcheck(numtests(N, prop_test())).
+  quickcheck(numtests(N, the_prop())).
 
 test() -> test(100).
 
-verbose() -> eqc:check(eqc_statem:show_states(prop_test())).
-check(C) -> eqc:check(prop_test(), [C]).
-check() -> eqc:check(prop_test()).
-recheck() -> recheck(prop_test()).
+verbose() -> eqc:check(eqc_statem:show_states(the_prop())).
+check(C) -> eqc:check(the_prop(), [C]).
+check() -> eqc:check(the_prop()).
+recheck() -> recheck(the_prop()).
+
+pulse_instrument() ->
+  [ pulse_instrument(File) || File <- filelib:wildcard("../src/*.erl") ++
+                                      filelib:wildcard("../test/*.erl") ].
+
+pulse_instrument(File) ->
+  Modules = [ application, application_controller, application_master,
+              application_starter, gen, gen_event, gen_fsm, gen_server,
+              proc_lib, supervisor ],
+  ReplaceModules =
+    [{Mod, list_to_atom(lists:concat([pulse_, Mod]))}
+      || Mod <- Modules],
+  {ok, Mod} = compile:file(File, [{d, 'PULSE', true},
+                                  {parse_transform, pulse_instrument},
+                                  {pulse_side_effect, [{ets, '_', '_'}]},
+                                  {pulse_replace_module, ReplaceModules}]),
+  code:purge(Mod),
+  code:load_file(Mod),
+  Mod.
 
