@@ -14,7 +14,8 @@
 
 -import(eqc_statem, [eq/2, tag/2]).
 
--define(RESOURCE, bla).
+-define(RESOURCE, resource).
+-define(SLEEP, 10).
 
 initial_state() ->
   #state{}.
@@ -39,48 +40,45 @@ new_resource_post(_, _, V) ->
     _                          -> {not_ok, V}
   end.
 
-%% -- new_worker
+%% -- cast
+cast(Scheduler) ->
+  Worker = spawn_opt(fun worker/0, [{scheduler, Scheduler}]),
+  Worker ! {cast, self()},
+  timer:sleep(?SLEEP),
+  {Worker, get_status(Worker)}.
 
-new_worker(Scheduler) ->
-  spawn_opt(fun worker/0, [{scheduler, Scheduler}]).
-
-new_worker_args(_) ->
+cast_args(_) ->
   [choose(1, erlang:system_info(schedulers))].
 
-new_worker_next(S, Pid, [Sched]) ->
-  S#state{ workers = S#state.workers ++ [#worker{ pid = Pid, scheduler = Sched }] }.
-
-%% -- cast
-cast(Worker) ->
-  Worker ! {cast, self()},
-  timer:sleep(2),
-  ok.
-
-cast_args(S) ->
-  [ready_worker(S)].
-
 cast_pre(S) ->
-  S#state.limit /= undefined andalso
-  ready_workers(S) /= [].
+  S#state.limit /= undefined.
 
-cast_pre(S, [Pid]) ->
-  ready == (get_worker(S, Pid))#worker.status.
+cast_next(S, V, [Sched]) ->
+  Pid    = {call, erlang, element, [1, V]},
+  Status = {call, erlang, element, [2, V]},
+  S1 = do_cast(S, Pid, [Sched]),
+  get_status_next(S1, Status, [Pid]).
 
-cast_next(S, _, [Pid]) ->
-  W = get_worker(S, Pid),
+do_cast(S, Pid, [Sched]) ->
   {Queue, Status} =
-    case schedule(S, W#worker.scheduler) of
+    case schedule(S, Sched) of
       full         -> {keep, {finished, overload}};
       {blocked, Q} -> {Q, blocked};
       {ready, Q}   -> {Q, working}
     end,
-  set_worker_status(S, Pid, Queue, Status).
+  W = #worker{ pid = Pid,
+               scheduler = Sched,
+               queue = Queue,
+               status = Status },
+  S#state{ workers = S#state.workers ++ [W] }.
+
+cast_post(S, [Sched], {Pid, Status}) ->
+  get_status_post(do_cast(S, Pid, [Sched]), [Pid], Status).
 
 %% -- get_status
-
 get_status(Worker) ->
   receive {Worker, R} -> R
-  after 5 -> blocked
+  after ?SLEEP -> blocked
   end.
 
 get_status_args(S) ->
@@ -92,26 +90,24 @@ get_status_pre(S) ->
 get_status_pre(S, [Pid]) ->
   case get_worker(S, Pid) of
     #worker{ status = {working, _} } -> false;
-    #worker{ status = ready }        -> false;
     _ -> true
   end.
 
 get_status_next(S, V, [WPid]) ->
   NewStatus =
     case (get_worker(S, WPid))#worker.status of
-      {finished, _} -> ready;
+      {finished, _} -> stopped;
       blocked       -> blocked;
-      working       -> {working, safe_element(2, V)} % {call, erlang, element, [2, V]}}
+      zombie        -> zombie;
+      working       -> {working, {call, erlang, element, [2, V]}}
     end,
   set_worker_status(S, WPid, NewStatus).
-
-safe_element(N, V={var, _}) -> {element, N, V};
-safe_element(N, T) -> element(N, T).
 
 get_status_post(S, [WPid], R) ->
   case (get_worker(S, WPid))#worker.status of
     {finished, Res} -> eq(R, Res);
     blocked         -> eq(R, blocked);
+    zombie          -> eq(R, blocked);
     working         ->
       case R of
         {working, Pid} when is_pid(Pid) -> true;
@@ -119,14 +115,48 @@ get_status_post(S, [WPid], R) ->
       end
   end.
 
-%% -- Common -----------------------------------------------------------------
+%% -- finish
+finish_work(Pid) ->
+  Pid ! finish,
+  timer:sleep(?SLEEP).
 
-%% dynamic_precondition(_, {call, eqc_statem, apply, [erlang, element, [2, T]]}) ->
-%%   io:format("DYNAMIC PRE!\n"),
-%%   is_tuple(T);
-%% dynamic_precondition(_S, Call) ->
-%%   io:format("DYNAMIC PRE: ~p!\n", [Call]),
-%%   true.
+finish_work_args(S) ->
+  [elements(working_workers(S))].
+
+finish_work_pre(S) ->
+  working_workers(S) /= [].
+
+finish_work_pre(S, [Pid]) ->
+  lists:member(Pid, working_workers(S)).
+
+finish_work_next(S, _, [Pid]) ->
+  W = #worker{} = lists:keyfind({working, Pid}, #worker.status, S#state.workers),
+  wakeup_worker(set_worker_status(S, W#worker.pid, stopped), W#worker.queue).
+
+%% -- crash
+crash(Pid) ->
+  Pid ! crash,
+  timer:sleep(?SLEEP).
+
+crash_args(S) ->
+  [elements(working_workers(S))].
+
+crash_pre(S) ->
+  working_workers(S) /= [].
+
+crash_pre(S, [Pid]) ->
+  lists:member(Pid, working_workers(S)).
+
+crash_next(S, _, [Pid]) ->
+  W = #worker{} = lists:keyfind({working, Pid}, #worker.status, S#state.workers),
+  kill_queue(set_worker_status(S, W#worker.pid, stopped), W#worker.queue).
+
+kill_queue(S, Q) ->
+  Kill =
+    fun(W=#worker{ queue = Q1, status = blocked }) when Q1 == Q ->
+          W#worker{ queue = zombie };
+       (W) -> W end,
+  S#state{ workers = lists:map(Kill, S#state.workers) }.
 
 %% -- Helpers ----------------------------------------------------------------
 
@@ -135,29 +165,44 @@ schedule(S, Scheduler) ->
   Width = S#state.width,
   N     = (Scheduler - 1) rem Width + 1,
   Queues = lists:sublist(lists:seq(N, Width) ++ lists:seq(1, Width), Width),
-  IsReady  = fun(ready)         -> true;
-                ({finished, _}) -> true;
-                (_)             -> false end,
+  NotReady  = fun(ready)         -> false;
+                 ({finished, _}) -> false;
+                 (_)             -> true end,
+  IsWorking = fun({working, _}) -> true;
+                 (working)      -> true;
+                 (_)            -> false end,
   QueueLen =
     fun(Q) ->
-      length([ {} || #worker{ queue = AlsoQ, status = St } <- S#state.workers,
-                     AlsoQ == Q, not IsReady(St) ]) end,
-  Ss = [ {Q, Len}
-        || Q   <- Queues,
-           Len <- [QueueLen(Q)],
+      Stats = [ St || #worker{ queue = AlsoQ, status = St } <- S#state.workers,
+                      AlsoQ == Q ],
+      {length(lists:filter(NotReady, Stats)), lists:any(IsWorking, Stats)}
+    end,
+  Ss = [ {Q, Worker}
+        || Q             <- Queues,
+           {Len, Worker} <- [QueueLen(Q)],
            Len < Limit div Width ],
   case Ss of
-    []          -> full;
-    [{Sc, 0}|_] -> {ready, Sc};
-    [{Sc, _}|_] -> {blocked, Sc}
+    []              -> full;
+    [{Sc, false}|_] -> {ready, Sc};
+    [{Sc, _}|_]     -> {blocked, Sc}
   end.
 
 get_worker(S, Pid) ->
   lists:keyfind(Pid, #worker.pid, S#state.workers).
 
+wakeup_worker(S, Q) ->
+  Blocked = [ W || W=#worker{status = blocked, queue = Q1} <- S#state.workers, Q == Q1 ],
+  case Blocked of
+    [] -> S;
+    [#worker{pid = Pid}|_] ->
+      set_worker_status(S, Pid, working)
+  end.
+
 set_worker_status(S, Pid, Status) ->
   set_worker_status(S, Pid, keep, Status).
 
+set_worker_status(S, Pid, _, stopped) ->
+  S#state{ workers = lists:keydelete(Pid, #worker.pid, S#state.workers) };
 set_worker_status(S, Pid, Q0, Status) ->
   W = get_worker(S, Pid),
   Q = if Q0 == keep -> W#worker.queue;
@@ -167,19 +212,15 @@ set_worker_status(S, Pid, Q0, Status) ->
                    S#state.workers,
                    W#worker{ queue = Q, status = Status }) }.
 
-ready_worker(S) ->
-  ?LET(W, elements(ready_workers(S)),
-    W#worker.pid).
-
 busy_worker(S) ->
   ?LET(W, elements(busy_workers(S)),
     W#worker.pid).
 
-ready_workers(S) ->
-  [ W || W = #worker{ status = ready } <- S#state.workers ].
-
 busy_workers(S) ->
-  [ W || W = #worker{ status = Status } <- S#state.workers, Status /= ready ].
+  S#state.workers.
+
+working_workers(S) ->
+  [ Pid || #worker{ status = {working, Pid} } <- S#state.workers ].
 
 %% -- Worker loop ------------------------------------------------------------
 
@@ -195,8 +236,7 @@ worker() ->
               {started, Ref, Pid} -> {working, Pid}
             end
         end,
-        From ! {self(), Res},
-        worker()
+        From ! {self(), Res}
   end.
 
 %% -- Property ---------------------------------------------------------------
@@ -215,7 +255,7 @@ prop_test() ->
 cleanup() ->
   error_logger:tty(false),
   (catch application:stop(sidejob)),
-  error_logger:tty(true),
+  % error_logger:tty(true),
   application:start(sidejob).
 
 test(N) ->

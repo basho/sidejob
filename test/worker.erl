@@ -65,7 +65,8 @@ handle_call(_Request, _From, State) ->
 %%--------------------------------------------------------------------
 handle_cast({start, Ref, Pid}, State) ->
   Pid ! {started, Ref, self()},
-  receive finish -> ok end,
+  receive finish -> ok;
+          crash  -> exit(crashed) end,
   {noreply, State}.
 
 %%--------------------------------------------------------------------
