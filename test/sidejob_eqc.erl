@@ -9,13 +9,15 @@
 -include_lib("eqc/include/eqc_statem.hrl").
 -include_lib("eqc/include/eqc.hrl").
 
--record(state, {limit, width, workers = []}).
+-record(state, {limit, width, restarts = 0, workers = []}).
 -record(worker, {pid, scheduler, queue, status = ready}).
 
 -import(eqc_statem, [eq/2, tag/2]).
 
 -define(RESOURCE, resource).
--define(SLEEP, 10).
+-define(SLEEP, 1).
+-define(TIMEOUT, 5000).
+-define(RESTART_LIMIT, 10).
 
 initial_state() ->
   #state{}.
@@ -90,7 +92,8 @@ get_status_pre(S) ->
 get_status_pre(S, [Pid]) ->
   case get_worker(S, Pid) of
     #worker{ status = {working, _} } -> false;
-    _ -> true
+    #worker{} -> true;
+    _ -> false
   end.
 
 get_status_next(S, V, [WPid]) ->
@@ -149,13 +152,22 @@ crash_pre(S, [Pid]) ->
 
 crash_next(S, _, [Pid]) ->
   W = #worker{} = lists:keyfind({working, Pid}, #worker.status, S#state.workers),
-  kill_queue(set_worker_status(S, W#worker.pid, stopped), W#worker.queue).
+  S1 = S#state{ restarts = S#state.restarts + 1 },
+  S2 = set_worker_status(S1, W#worker.pid, stopped),
+  case S2#state.restarts > ?RESTART_LIMIT of
+    true  -> kill_all_queues(S2#state{ restarts = 0 });
+    false -> kill_queue(S2, W#worker.queue)
+  end.
 
 kill_queue(S, Q) ->
   Kill =
     fun(W=#worker{ queue = Q1, status = blocked }) when Q1 == Q ->
           W#worker{ queue = zombie };
        (W) -> W end,
+  S#state{ workers = lists:map(Kill, S#state.workers) }.
+
+kill_all_queues(S) ->
+  Kill = fun(W) -> W#worker{ queue = zombie } end,
   S#state{ workers = lists:map(Kill, S#state.workers) }.
 
 %% -- Helpers ----------------------------------------------------------------
@@ -220,7 +232,7 @@ busy_workers(S) ->
   S#state.workers.
 
 working_workers(S) ->
-  [ Pid || #worker{ status = {working, Pid} } <- S#state.workers ].
+  [ Pid || #worker{ status = {working, Pid}, queue = Q } <- S#state.workers, Q /= zombie ].
 
 %% -- Worker loop ------------------------------------------------------------
 
@@ -228,6 +240,7 @@ worker() ->
   receive
     {cast, From} ->
       Ref = make_ref(),
+      %% io:format("~p on ~p\n", [self(), erlang:system_info(scheduler_id)]),
       Res =
         case sidejob:cast(?RESOURCE, {start, Ref, self()}) of
           overload -> overload;
@@ -243,14 +256,15 @@ worker() ->
 
 prop_test() ->
   ?FORALL(Cmds, commands(?MODULE),
-  ?TIMEOUT(1000,
+  ?TIMEOUT(?TIMEOUT,
+  ?SOMETIMES(4,
   begin
     cleanup(),
     HSR={_, S, R} = run_commands(?MODULE, Cmds),
     [ exit(Pid, kill) || #worker{ pid = Pid } <- S#state.workers ],
     pretty_commands(?MODULE, Cmds, HSR,
       R == ok)
-  end)).
+  end))).
 
 cleanup() ->
   error_logger:tty(false),
