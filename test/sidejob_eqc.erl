@@ -10,7 +10,7 @@
 -include_lib("eqc/include/eqc.hrl").
 
 -record(state, {limit, width, restarts = 0, workers = []}).
--record(worker, {pid, scheduler, queue, status = ready}).
+-record(worker, {pid, scheduler, queue, status = ready, cmd}).
 
 -import(eqc_statem, [eq/2, tag/2]).
 
@@ -48,26 +48,32 @@ new_resource_post(_, _, V) ->
     _                          -> {not_ok, V}
   end.
 
-%% -- cast
-cast(Scheduler) ->
+%% -- work
+work(Cmd, Scheduler) ->
   Worker = spawn_opt(fun worker/0, [{scheduler, Scheduler}]),
-  Worker ! {cast, self()},
+  Worker ! {Cmd, self()},
   timer:sleep(?SLEEP),
   {Worker, get_status(Worker)}.
 
-cast_args(_) ->
-  [choose(1, erlang:system_info(schedulers))].
+-ifdef(PULSE).
+gen_scheduler() -> 1.
+-else.
+gen_scheduler() -> choose(1, erlang:system_info(schedulers)).
+-endif.
 
-cast_pre(S) ->
+work_args(_) ->
+  [elements([call, cast]), gen_scheduler()].
+
+work_pre(S) ->
   S#state.limit /= undefined.
 
-cast_next(S, V, [Sched]) ->
-  Pid    = {call, erlang, element, [1, V]},
-  Status = {call, erlang, element, [2, V]},
-  S1 = do_cast(S, Pid, [Sched]),
+work_next(S, V, [Cmd, Sched]) ->
+  Pid    = {call, ?MODULE, get_element, [1, V]},
+  Status = {call, ?MODULE, get_element, [2, V]},
+  S1 = do_work(S, Pid, [Cmd, Sched]),
   get_status_next(S1, Status, [Pid]).
 
-do_cast(S, Pid, [Sched]) ->
+do_work(S, Pid, [Cmd, Sched]) ->
   {Queue, Status} =
     case schedule(S, Sched) of
       full         -> {keep, {finished, overload}};
@@ -77,11 +83,12 @@ do_cast(S, Pid, [Sched]) ->
   W = #worker{ pid = Pid,
                scheduler = Sched,
                queue = Queue,
+               cmd = Cmd,
                status = Status },
   S#state{ workers = S#state.workers ++ [W] }.
 
-cast_post(S, [Sched], {Pid, Status}) ->
-  get_status_post(do_cast(S, Pid, [Sched]), [Pid], Status).
+work_post(S, [Cmd, Sched], {Pid, Status}) ->
+  get_status_post(do_work(S, Pid, [Cmd, Sched]), [Pid], Status).
 
 %% -- get_status
 get_status(Worker) ->
@@ -140,7 +147,12 @@ finish_work_pre(S, [Pid]) ->
 
 finish_work_next(S, _, [Pid]) ->
   W = #worker{} = lists:keyfind({working, Pid}, #worker.status, S#state.workers),
-  wakeup_worker(set_worker_status(S, W#worker.pid, stopped), W#worker.queue).
+  Status =
+    case W#worker.cmd of
+      cast -> stopped;
+      call -> {finished, done}
+    end,
+  wakeup_worker(set_worker_status(S, W#worker.pid, Status), W#worker.queue).
 
 %. -- crash
 crash(Pid) ->
@@ -240,13 +252,18 @@ busy_workers(S) ->
 working_workers(S) ->
   [ Pid || #worker{ status = {working, Pid}, queue = Q } <- S#state.workers, Q /= zombie ].
 
+get_element(N, T) when is_tuple(T) -> element(N, T);
+get_element(_, _) -> bad_element.
+
 %% -- Worker loop ------------------------------------------------------------
 
 worker() ->
   receive
+    {call, From} ->
+      Res = sidejob:call(?RESOURCE, {start, self(), From}),
+      From ! {self(), Res};
     {cast, From} ->
       Ref = make_ref(),
-      %% io:format("~p on ~p\n", [self(), erlang:system_info(scheduler_id)]),
       Res =
         case sidejob:cast(?RESOURCE, {start, Ref, self()}) of
           overload -> overload;

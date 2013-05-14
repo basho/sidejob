@@ -53,6 +53,11 @@ init([_Arg]) ->
 %%                {stop, Reason, State}
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
+handle_call({start, Worker, Parent}, _From, State) ->
+  Parent ! {Worker, {working, self()}},
+  receive finish -> ok;
+          crash  -> exit(crashed) end,
+  {reply, done, State};
 handle_call(_Request, _From, State) ->
   Reply = ok,
   {reply, Reply, State}.
