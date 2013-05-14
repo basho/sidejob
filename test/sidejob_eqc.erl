@@ -26,15 +26,21 @@ initial_state() ->
 
 %% -- new_resource
 new_resource_command(_S) ->
-  N     = erlang:system_info(schedulers),
-  Limit = ?LET(K, choose(1, 5), K * N),
-  {call, sidejob, new_resource, [?RESOURCE, worker, Limit]}.
+  ?LET({K, W}, {choose(1, 5), oneof([?SHRINK(default, [1]), choose(1, 8)])},
+  case W of
+    default ->
+      Width = erlang:system_info(schedulers),
+      {call, sidejob, new_resource, [?RESOURCE, worker, K * Width]};
+    Width ->
+      {call, sidejob, new_resource, [?RESOURCE, worker, K * Width, Width]}
+  end).
 
 new_resource_pre(S) -> S#state.limit == undefined.
 
-new_resource_next(S, _, [_, _, Limit]) ->
-  N = erlang:system_info(schedulers),
-  S#state{ limit = Limit, width = N }.
+new_resource_next(S, V, Args=[_, _, _]) ->
+  new_resource_next(S, V, Args ++ [erlang:system_info(schedulers)]);
+new_resource_next(S, _, [_, _, Limit, Width]) ->
+  S#state{ limit = Limit, width = Width }.
 
 new_resource_post(_, _, V) ->
   case V of
@@ -136,7 +142,7 @@ finish_work_next(S, _, [Pid]) ->
   W = #worker{} = lists:keyfind({working, Pid}, #worker.status, S#state.workers),
   wakeup_worker(set_worker_status(S, W#worker.pid, stopped), W#worker.queue).
 
-%% -- crash
+%. -- crash
 crash(Pid) ->
   Pid ! crash,
   timer:sleep(?SLEEP).
@@ -262,8 +268,9 @@ prop_test() ->
     cleanup(),
     HSR={_, S, R} = run_commands(?MODULE, Cmds),
     [ exit(Pid, kill) || #worker{ pid = Pid } <- S#state.workers ],
+    aggregate(command_names(Cmds),
     pretty_commands(?MODULE, Cmds, HSR,
-      R == ok)
+      R == ok))
   end))).
 
 cleanup() ->
