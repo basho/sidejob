@@ -10,9 +10,8 @@
 -include_lib("eqc/include/eqc.hrl").
 -include_lib("pulse/include/pulse.hrl").
 
--record(state, {limit, width, restarts = 0, supervisors = []}).
--record(supervisor, {queue, children = []}).
--record(child, {}).
+-record(state, {limit, width, children = []}).
+-record(child, {pid}).
 
 -import(eqc_statem, [eq/2, tag/2]).
 
@@ -27,23 +26,29 @@ initial_state() ->
 %% -- Commands ---------------------------------------------------------------
 
 %% -- new_resource
-new_resource_command(_S) ->
+new_resource(Limit) ->
+  R = sidejob:new_resource(?RESOURCE, sidejob_supervisor, Limit),
+  timer:sleep(?SLEEP),
+  R.
+
+new_resource(Limit, Width) ->
+  R = sidejob:new_resource(?RESOURCE, sidejob_supervisor, Limit, Width),
+  timer:sleep(?SLEEP),
+  R.
+
+new_resource_args(_S) ->
   ?LET({K, W}, {choose(1, 5), oneof([?SHRINK(default, [1]), choose(1, 8)])},
   case W of
-    default ->
-      Width = erlang:system_info(schedulers),
-      {call, sidejob, new_resource, [?RESOURCE, sidejob_supervisor, K * Width]};
-    Width ->
-      {call, sidejob, new_resource, [?RESOURCE, sidejob_supervisor, K * Width, Width]}
+    default -> [K * erlang:system_info(schedulers)];
+    Width   -> [K * Width, Width]
   end).
 
 new_resource_pre(S) -> S#state.limit == undefined.
 
-new_resource_next(S, V, Args=[_, _, _]) ->
+new_resource_next(S, V, Args=[_]) ->
   new_resource_next(S, V, Args ++ [erlang:system_info(schedulers)]);
-new_resource_next(S, _, [_, _, Limit, Width]) ->
-  S#state{ limit = Limit, width = Width,
-           supervisors = [ #supervisor{ queue = Q } || Q <- lists:seq(1, Width) ] }.
+new_resource_next(S, _, [Limit, Width]) ->
+  S#state{ limit = Limit, width = Width }.
 
 new_resource_post(_, _, V) ->
   case V of
@@ -76,17 +81,51 @@ work_args(_) ->
 work_pre(S) ->
   S#state.limit /= undefined.
 
-work_next(S, _V, [_Cmd, Sched]) ->
-  case schedule(S, Sched) of
-    overload -> S;
-    Sup      -> add_child(#child{}, Sup, S)
+work_next(S, V, [_Cmd, _Sched]) ->
+  case length(S#state.children) < S#state.limit of
+    false -> S;
+    true  -> S#state{ children = S#state.children ++ [#child{pid = V}] }
   end.
 
-work_post(S, [_Cmd, Sched], V) ->
-  case schedule(S, Sched) of
-    overload -> eq(V, {error, overload});
-    _Sup     -> assert({not_pid, V}, is_pid(V))
+work_post(S, [_Cmd, _Sched], V) ->
+  case length(S#state.children) < S#state.limit of
+    false -> eq(V, {error, overload});
+    true  -> assert({not_pid, V}, is_pid(V))
   end.
+
+%% -- Finish work ------------------------------------------------------------
+
+terminate(Pid, Reason) ->
+  Pid ! Reason,
+  timer:sleep(?SLEEP).
+
+terminate_args(S) ->
+  [elements([ C#child.pid || C <- S#state.children ]),
+   elements([normal, crash])].
+
+terminate_pre(S) -> S#state.children /= [].
+terminate_pre(S, [Pid, _]) -> lists:keymember(Pid, #child.pid, S#state.children).
+terminate_next(S, _, [Pid, _]) ->
+  S#state{ children = lists:keydelete(Pid, #child.pid, S#state.children) }.
+
+%% -- which_children ---------------------------------------------------------
+
+which_children_command(_S) ->
+  {call, sidejob_supervisor, which_children, [?RESOURCE]}.
+
+which_children_pre(S) -> S#state.limit /= undefined.
+
+which_children_post(S, [_], V) when is_list(V) ->
+  eq(lists:sort(V), lists:sort([ C#child.pid || C <- S#state.children ]));
+which_children_post(_, [_], V) ->
+  {not_a_list, V}.
+
+%% -- Weights ----------------------------------------------------------------
+
+weight(_, work)           -> 5;
+weight(_, terminate)      -> 4;
+weight(_, which_children) -> 1;
+weight(_, _)              -> 1.
 
 %% -- Helpers ----------------------------------------------------------------
 
@@ -94,33 +133,10 @@ assert(_, true)  -> true;
 assert(T, false) -> T;
 assert(T, X)     -> {T, X}.
 
-drop(N, Xs) -> element(2, lists:split(N, Xs)).
-take(N, Xs) -> lists:sublist(Xs, N).
-
-usage(#supervisor{children = Cs}) -> length(Cs).
-
-add_child(Child, Sup, S) ->
-  NewSup = Sup#supervisor{ children = Sup#supervisor.children ++ [Child] },
-  S#state{ supervisors = lists:keystore(Sup#supervisor.queue,
-                                        #supervisor.queue,
-                                        S#state.supervisors,
-                                        NewSup) }.
-
-schedule(S, Scheduler) ->
-  Limit = S#state.limit,
-  Width = S#state.width,
-  N     = Scheduler rem Width,
-  case [ Sup || Sup <- drop(N, S#state.supervisors) ++
-                       take(N, S#state.supervisors),
-                usage(Sup) < Limit div Width ] of
-    []      -> overload;
-    [Sup|_] -> Sup
-  end.
-
 %% -- Workers and proxies ----------------------------------------------------
 
 worker() ->
-  receive finish -> ok;
+  receive normal -> ok;
           crash  -> exit(crash) end.
 
 start_worker() ->
@@ -190,7 +206,7 @@ cleanup() ->
   % error_logger:tty(true),
   application:start(sidejob).
 
-the_prop() -> prop_test().
+the_prop() -> prop_par().
 
 test({N, h})   -> test({N * 60, min});
 test({N, min}) -> test({N * 60, sec});
