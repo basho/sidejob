@@ -330,18 +330,24 @@ cleanup() ->
   % error_logger:tty(true),
   application:start(sidejob).
 
-the_prop() ->
-  prop_par().
+the_prop() -> prop_pulse().
 
-test(N) ->
+test({N, h})   -> test({N * 60, min});
+test({N, min}) -> test({N * 60, sec});
+test({N, s})   -> test({N, sec});
+test({N, sec}) ->
+  quickcheck(eqc:testing_time(N, the_prop()));
+test(N) when is_integer(N) ->
   quickcheck(numtests(N, the_prop())).
 
 test() -> test(100).
 
-verbose() -> eqc:check(eqc_statem:show_states(the_prop())).
-check(C) -> eqc:check(the_prop(), [C]).
-check() -> eqc:check(the_prop()).
-recheck() -> recheck(the_prop()).
+recheck() -> eqc:recheck(the_prop()).
+check()   -> eqc:check(the_prop()).
+check(CE) -> eqc:check(the_prop(), CE).
+
+verbose()   -> eqc:check(eqc_statem:show_states(the_prop())).
+verbose(CE) -> eqc:check(eqc_statem:show_states(the_prop(), CE)).
 
 pulse_instrument() ->
   [ pulse_instrument(File) || File <- filelib:wildcard("../src/*.erl") ++
