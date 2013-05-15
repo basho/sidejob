@@ -1,2 +1,3 @@
 *.beam
+.*.swp
 ebin/sidejob.app

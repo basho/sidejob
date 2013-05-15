@@ -108,7 +108,7 @@ available(Name, ETS, Width, Limit, X, End) ->
     Worker = X rem Width,
     case is_available(ETS, Limit, Worker) of
         false ->
-            available(Name, ETS, Width, Limit, Worker+1, End);
+            available(Name, ETS, Width, Limit, (Worker+1) rem Width, End);
         true ->
             worker_reg_name(Name, Worker)
     end.
@@ -119,13 +119,8 @@ is_available(ETS, Limit, Worker) ->
             false;
         0 ->
             Value = ets:update_counter(ETS, Worker, 1),
-            case Value >= Limit of
-                true ->
-                    ets:insert(ETS, {{full, Worker}, 1}),
-                    false;
-                false ->
-                    true
-            end
+            [ ets:insert(ETS, {{full, Worker}, 1}) || Value >= Limit ],
+            true
     end.
 
 worker_reg_name(Name, Id) ->

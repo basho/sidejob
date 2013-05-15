@@ -68,9 +68,6 @@ init([Name, Mod]) ->
                         public,
                         {read_concurrency,true},
                         {write_concurrency,true}]),
-    Counters = [{X, 0} || X <- lists:seq(0,Width-1)],
-    Full = [{{full,X}, 0} || X <- lists:seq(0,Width-1)],
-    ets:insert(Tab, Counters ++ Full),
 
     StatsTab = ets:new(StatsETS, [named_table,
                                   public,
