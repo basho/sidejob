@@ -18,7 +18,8 @@
 %%
 %% -------------------------------------------------------------------
 -module(sidejob).
--export([new_resource/3, new_resource/4, call/2, call/3, cast/2]).
+-export([new_resource/3, new_resource/4, call/2, call/3, cast/2,
+         unbounded_cast/2]).
 
 %%%===================================================================
 %%% API
@@ -83,9 +84,23 @@ cast(Name, Msg) ->
             gen_server:cast(Worker, Msg)
     end.
 
+%% @doc
+%% Perform an asynchronous cast to the specified resource, ignoring
+%% usage limits
+unbounded_cast(Name, Msg) ->
+    Worker = preferred_worker(Name),
+    gen_server:cast(Worker, Msg).
+
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+%% Return the preferred worker for the current scheduler
+preferred_worker(Name) ->
+    Width = Name:width(),
+    Scheduler = erlang:system_info(scheduler_id),
+    Worker = Scheduler rem Width,
+    worker_reg_name(Name, Worker).
 
 %% Find an available worker or return none if all workers at limit
 available(Name) ->
