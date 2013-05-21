@@ -35,7 +35,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/2, ets/1, stats_ets/1]).
+-export([start_link/2, stats_ets/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -47,10 +47,6 @@
 start_link(Name, Mod) ->
     supervisor:start_link({local, Name}, ?MODULE, [Name, Mod]).
 
-ets(Name) ->
-    ETS = iolist_to_binary([atom_to_binary(Name, latin1), "_ets"]),
-    binary_to_atom(ETS, latin1).
-
 stats_ets(Name) ->
     ETS = iolist_to_binary([atom_to_binary(Name, latin1), "_stats_ets"]),
     binary_to_atom(ETS, latin1).
@@ -61,13 +57,17 @@ stats_ets(Name) ->
 
 init([Name, Mod]) ->
     Width = Name:width(),
-    ETS = ets(Name),
     StatsETS = stats_ets(Name),
     StatsName = Name:stats(),
-    Tab = ets:new(ETS, [named_table,
-                        public,
-                        {read_concurrency,true},
-                        {write_concurrency,true}]),
+    WorkerNames = sidejob_worker:workers(Name, Width),
+
+    _WorkerETS = [begin
+                      WorkerTab = ets:new(WorkerName, [named_table,
+                                                       public]),
+                      ets:insert(WorkerTab, [{usage, 0},
+                                             {full, 0}]),
+                      WorkerTab
+                  end || WorkerName <- WorkerNames],
 
     StatsTab = ets:new(StatsETS, [named_table,
                                   public,
@@ -77,7 +77,7 @@ init([Name, Mod]) ->
 
     WorkerSup = {sidejob_worker_sup,
                  {sidejob_worker_sup, start_link,
-                  [Name, Width, Tab, StatsName, Mod]},
+                  [Name, Width, StatsName, Mod]},
                  permanent, infinity, supervisor, [sidejob_worker_sup]},
     StatsServer = {StatsName,
                    {sidejob_resource_stats, start_link, [StatsName, StatsTab]},
