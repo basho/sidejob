@@ -106,7 +106,7 @@ init([ResName, Id, ETS, StatsName, Mod]) ->
                            width=Width,
                            limit=Limit,
                            reporter=StatsName},
-            ets:insert(ETS, [{Id - 1, 0}, {{full, Id - 1}, 0}]),
+            ets:insert(ETS, [{usage,0}, {full,0}]),
             {ok, State};
         Other ->
             Other
@@ -198,7 +198,7 @@ tick(State=#state{id=Id, reporter=Reporter}) ->
     sidejob_resource_stats:report(Reporter, Id, Usage, In, Out),
     State2.
 
-update_usage(State=#state{id=Id, ets=ETS, width=Width, limit=Limit}) ->
+update_usage(State=#state{ets=ETS, width=Width, limit=Limit}) ->
     Usage = current_usage(State),
     Full = case Usage >= (Limit div Width) of
                true ->
@@ -206,8 +206,8 @@ update_usage(State=#state{id=Id, ets=ETS, width=Width, limit=Limit}) ->
                false ->
                    0
            end,
-    ets:insert(ETS, [{Id-1, Usage},
-                     {{full, Id-1}, Full}]),
+    ets:insert(ETS, [{usage, Usage},
+                     {full, Full}]),
     State.
 
 current_usage(#state{usage=default}) ->
