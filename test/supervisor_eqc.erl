@@ -9,6 +9,7 @@
 -include_lib("eqc/include/eqc_statem.hrl").
 -include_lib("eqc/include/eqc.hrl").
 -include_lib("pulse/include/pulse.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 -record(state, {limit, width, children = []}).
 -record(child, {pid}).
@@ -19,6 +20,9 @@
 -define(SLEEP, 1).
 -define(TIMEOUT, 5000).
 -define(RESTART_LIMIT, 10).
+
+-define(QC_OUT(P),
+        eqc:on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
 
 initial_state() ->
   #state{}.
@@ -156,7 +160,7 @@ proxy() ->
 
 %% -- Property ---------------------------------------------------------------
 
-prop_test() ->
+prop_seq() ->
   ?FORALL(Cmds, commands(?MODULE),
   ?TIMEOUT(?TIMEOUT,
   ?SOMETIMES(4,
@@ -225,3 +229,20 @@ check(CE) -> eqc:check(the_prop(), CE).
 verbose()   -> eqc:check(eqc_statem:show_states(the_prop())).
 verbose(CE) -> eqc:check(eqc_statem:show_states(the_prop(), CE)).
 
+-ifdef(PULSE).
+eqc_test_() ->
+    {timeout, 30,
+     fun() ->
+             ?assert(eqc:quickcheck(eqc:testing_time(5, ?QC_OUT(prop_pulse()))))
+     end
+    }.
+
+-else.
+eqc_test_() ->
+    {timeout, 30,
+     fun() ->
+             ?assert(eqc:quickcheck(eqc:testing_time(5, ?QC_OUT(prop_seq())))),
+             ?assert(eqc:quickcheck(eqc:testing_time(5, ?QC_OUT(prop_par()))))
+     end
+    }.
+-endif
