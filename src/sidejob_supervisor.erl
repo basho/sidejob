@@ -108,8 +108,8 @@ handle_call({spawn, Fun}, _From, State) ->
     Pid = case Fun of
               _ when is_function(Fun) ->
                   spawn_link(Fun);
-              {Mod, Fun, Args} ->
-                  spawn_link(Mod, Fun, Args)
+              {M, F, A} ->
+                  spawn_link(M, F, A)
           end,
     State2 = add_child(Pid, State),
     {reply, Pid, State2};
