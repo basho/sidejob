@@ -21,7 +21,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/5]).
+-export([start_link/4]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -30,22 +30,22 @@
 %%% API functions
 %%%===================================================================
 
-start_link(Name, NumWorkers, ETS, StatsName, Mod) ->
+start_link(Name, NumWorkers, StatsName, Mod) ->
     NameBin = atom_to_binary(Name, latin1),
     RegName = binary_to_atom(<<NameBin/binary, "_worker_sup">>, latin1),
     supervisor:start_link({local, RegName}, ?MODULE,
-                          [Name, NumWorkers, ETS, StatsName, Mod]).
+                          [Name, NumWorkers, StatsName, Mod]).
 
 %%%===================================================================
 %%% Supervisor callbacks
 %%%===================================================================
 
-init([Name, NumWorkers, ETS, StatsName, Mod]) ->
+init([Name, NumWorkers, StatsName, Mod]) ->
     Children = [begin
                     WorkerName = sidejob_worker:reg_name(Name, Id),
                     {WorkerName,
                      {sidejob_worker, start_link,
-                      [WorkerName, Name, Id, ETS, StatsName, Mod]},
+                      [WorkerName, Name, Id, WorkerName, StatsName, Mod]},
                      permanent, 5000, worker, [sidejob_worker]}
                 end || Id <- lists:seq(1, NumWorkers)],
     {ok, {{one_for_one, 10, 10}, Children}}.

@@ -35,7 +35,6 @@
 %% supervision hierarchy that manages this resource: ensuring that the workers
 %% and stats aggregation server for this resource remain running.
 new_resource(Name, Mod, Limit, Workers) ->
-    ETS = sidejob_resource_sup:ets(Name),
     StatsETS = sidejob_resource_sup:stats_ets(Name),
     WorkerNames = sidejob_worker:workers(Name, Workers),
     StatsName = sidejob_resource_stats:reg_name(Name),
@@ -43,9 +42,9 @@ new_resource(Name, Mod, Limit, Workers) ->
     sidejob_config:load_config(Name, [{width, Workers},
                                       {limit, Limit},
                                       {worker_limit, WorkerLimit},
-                                      {ets, ETS},
                                       {stats_ets, StatsETS},
                                       {workers, list_to_tuple(WorkerNames)},
+                                      {worker_ets, list_to_tuple(WorkerNames)},
                                       {stats, StatsName}]),
     sidejob_sup:add_resource(Name, Mod).
 
@@ -104,37 +103,38 @@ preferred_worker(Name) ->
 
 %% Find an available worker or return none if all workers at limit
 available(Name) ->
-    ETS = Name:ets(),
+    WorkerETS = Name:worker_ets(),
     Width = Name:width(),
     Limit = Name:worker_limit(),
     Scheduler = erlang:system_info(scheduler_id),
     Worker = Scheduler rem Width,
-    case is_available(ETS, Limit, Worker) of
+    case is_available(WorkerETS, Limit, Worker) of
         true ->
             worker_reg_name(Name, Worker);
         false ->
-            available(Name, ETS, Width, Limit, Worker+1, Worker)
+            available(Name, WorkerETS, Width, Limit, Worker+1, Worker)
     end.
 
-available(Name, _ETS, _Width, _Limit, End, End) ->
+available(Name, _WorkerETS, _Width, _Limit, End, End) ->
     ets:update_counter(Name:stats_ets(), rejected, 1),
     none;
-available(Name, ETS, Width, Limit, X, End) ->
+available(Name, WorkerETS, Width, Limit, X, End) ->
     Worker = X rem Width,
-    case is_available(ETS, Limit, Worker) of
+    case is_available(WorkerETS, Limit, Worker) of
         false ->
-            available(Name, ETS, Width, Limit, (Worker+1) rem Width, End);
+            available(Name, WorkerETS, Width, Limit, (Worker+1) rem Width, End);
         true ->
             worker_reg_name(Name, Worker)
     end.
 
-is_available(ETS, Limit, Worker) ->
-    case ets:lookup_element(ETS, {full, Worker}, 2) of
+is_available(WorkerETS, Limit, Worker) ->
+    ETS = element(Worker+1, WorkerETS),
+    case ets:lookup_element(ETS, full, 2) of
         1 ->
             false;
         0 ->
-            Value = ets:update_counter(ETS, Worker, 1),
-            [ ets:insert(ETS, {{full, Worker}, 1}) || Value >= Limit ],
+            Value = ets:update_counter(ETS, usage, 1),
+            [ ets:insert(ETS, {full, 1}) || Value >= Limit ],
             true
     end.
 
