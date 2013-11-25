@@ -21,7 +21,8 @@
 -behaviour(gen_server).
 
 %% API
--export([reg_name/1, start_link/2, report/5, init_stats/1, stats/1, usage/1]).
+-export([reg_name/1, start_link/2, report/5, init_stats/1, init_stats/2,
+	 stats/1, usage/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -65,6 +66,10 @@ init_stats(StatsETS) ->
                           {usage, 0},
                           {stats, EmptyStats}]).
 
+init_stats(Name, StatsETS) ->
+    register_exometer(Name),
+    init_stats(StatsETS).
+
 %% @doc
 %% Return the computed stats for the given sidejob resource
 stats(Name) ->
@@ -76,6 +81,8 @@ stats(Name) ->
 usage(Name) ->
     StatsETS = Name:stats_ets(),
     ets:lookup_element(StatsETS, usage, 2).
+
+%%% Exometer probe API
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -187,3 +194,14 @@ compute(#state{usage=Usage, rejected=Rejected, in=In, out=Out,
      {max_in_rate_total, InMaxTot},
      {avg_out_rate_total, OutAvgTot},
      {max_out_rate_total, OutMaxTot}].
+
+
+register_exometer(Name) ->
+    try begin
+	    ExoName = Name:exometer_name(),
+	    exometer:new(ExoName, sidejob, [{ref, Name}])
+	end
+    catch
+	error:undef ->
+	    ok
+    end.

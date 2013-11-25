@@ -20,6 +20,11 @@
 -module(sidejob_stat).
 -export([new/0, add/4, compute/1]).
 
+-behaviour(exometer_entry).
+
+-export([new/3, delete/3, get_value/4, update/4, reset/3,
+	 sample/3, get_datapoints/3, setopts/4]).
+
 -record(stat, {rejected = 0,
                in_sum   = 0,
                in_max   = 0,
@@ -46,3 +51,41 @@ compute(#stat{rejected=Rejected, in_sum=InSum, in_max=InMax,
     InAvg = InSum div max(1,Samples),
     OutAvg = OutSum div max(1,Samples),
     {InSum, Rejected, InAvg, InMax, OutAvg, OutMax}.
+
+
+%% exometer_entry callbacks
+
+new(_Name, _Type, Opts) ->
+    case lists:keyfind(ref, 1, Opts) of
+	{_, Ref} ->  {ok, Ref};
+	false    ->  {error, missing_ref}
+    end.
+
+delete(_, _, _) -> ok.
+
+get_value(_Name, _Type, Ref, DPs) ->
+    try filter_datapoints(sidejob_resource_stats:stats(Ref), DPs)
+    catch
+	error:_ ->
+	    unavailable
+    end.
+
+filter_datapoints(Stats, default) ->
+    Stats;
+filter_datapoints(Stats, DPs) ->
+    [S || {K, _} = S <- Stats,
+	  lists:member(K, DPs)].
+
+update(_, _, _, _) -> {error, not_supported}.
+
+reset(_, _, _) -> {error, not_supported}.
+
+sample(_, _, _) -> {error, not_supported}.
+
+get_datapoints(_, _, _) ->
+    [usage,rejected, in_rate, out_rate, usage_60s, rejected_60s,
+     avg_in_rate_60s, max_in_rate_60s, avg_out_rate_60s,
+     max_out_rate_60s, usage_total, rejected_total,
+     avg_in_rate_total, max_in_rate_total, avg_out_rate_total].
+
+setopts(_, _, _, _) -> {error, not_supported}.

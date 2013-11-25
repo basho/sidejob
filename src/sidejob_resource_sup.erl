@@ -73,7 +73,7 @@ init([Name, Mod]) ->
                                   public,
                                   {read_concurrency,true},
                                   {write_concurrency,true}]),
-    sidejob_resource_stats:init_stats(StatsTab),
+    sidejob_resource_stats:init_stats(Name, StatsTab),
 
     WorkerSup = {sidejob_worker_sup,
                  {sidejob_worker_sup, start_link,
