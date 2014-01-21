@@ -6,9 +6,13 @@
 
 -compile(export_all).
 
+-ifdef(EQC).
 -include_lib("eqc/include/eqc_statem.hrl").
 -include_lib("eqc/include/eqc.hrl").
+-ifdef(PULSE).
 -include_lib("pulse/include/pulse.hrl").
+-endif.
+
 -include_lib("eunit/include/eunit.hrl").
 
 -record(state, {limit, width, children = []}).
@@ -245,4 +249,6 @@ eqc_test_() ->
              ?assert(eqc:quickcheck(eqc:testing_time(5, ?QC_OUT(prop_par()))))
      end
     }.
--endif
+-endif.
+
+-endif.                                         % top-level EQC
