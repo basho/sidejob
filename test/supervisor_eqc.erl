@@ -6,15 +6,19 @@
 
 -compile(export_all).
 
+-ifdef(EQC).
 -include_lib("eqc/include/eqc_statem.hrl").
 -include_lib("eqc/include/eqc.hrl").
+-ifdef(PULSE).
 -include_lib("pulse/include/pulse.hrl").
+-endif.
+
 -include_lib("eunit/include/eunit.hrl").
 
 -record(state, {limit, width, children = []}).
 -record(child, {pid}).
 
--import(eqc_statem, [eq/2, tag/2]).
+-import(eqc_statem, [tag/2]).
 
 -define(RESOURCE, resource).
 -define(SLEEP, 1).
@@ -186,6 +190,7 @@ prop_par() ->
       R == ok))
   end)).
 
+-ifdef(PULSE).
 prop_pulse() ->
   ?SETUP(fun() -> N = erlang:system_flag(schedulers_online, 1),
                   fun() -> erlang:system_flag(schedulers_online, N) end end,
@@ -198,6 +203,7 @@ prop_pulse() ->
     aggregate(command_names(Cmds),
     pretty_commands(?MODULE, Cmds, HSR,
       R == ok))))).
+-endif.
 
 kill_all_pids(Pid) when is_pid(Pid) -> exit(Pid, kill);
 kill_all_pids([H|T])                -> kill_all_pids(H), kill_all_pids(T);
@@ -245,4 +251,6 @@ eqc_test_() ->
              ?assert(eqc:quickcheck(eqc:testing_time(5, ?QC_OUT(prop_par()))))
      end
     }.
--endif
+-endif.
+
+-endif.                                         % top-level EQC
