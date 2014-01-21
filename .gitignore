@@ -1,3 +1,4 @@
 *.beam
 .*.swp
 ebin/sidejob.app
+.eunit
