@@ -190,6 +190,7 @@ prop_par() ->
       R == ok))
   end)).
 
+-ifdef(PULSE).
 prop_pulse() ->
   ?SETUP(fun() -> N = erlang:system_flag(schedulers_online, 1),
                   fun() -> erlang:system_flag(schedulers_online, N) end end,
@@ -202,6 +203,7 @@ prop_pulse() ->
     aggregate(command_names(Cmds),
     pretty_commands(?MODULE, Cmds, HSR,
       R == ok))))).
+-endif.
 
 kill_all_pids(Pid) when is_pid(Pid) -> exit(Pid, kill);
 kill_all_pids([H|T])                -> kill_all_pids(H), kill_all_pids(T);
