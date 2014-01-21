@@ -18,7 +18,7 @@
 -record(state, {limit, width, restarts = 0, workers = []}).
 -record(worker, {pid, scheduler, queue, status = ready, cmd}).
 
--import(eqc_statem, [eq/2, tag/2]).
+-import(eqc_statem, [tag/2]).
 
 -define(RESOURCE, resource).
 -define(SLEEP, 1).
@@ -314,6 +314,7 @@ prop_par() ->
       R == ok))
   end)).
 
+-ifdef(PULSE).
 prop_pulse() ->
   ?SETUP(fun() -> N = erlang:system_flag(schedulers_online, 1),
                   fun() -> erlang:system_flag(schedulers_online, N) end end,
@@ -326,6 +327,7 @@ prop_pulse() ->
     aggregate(command_names(Cmds),
     pretty_commands(?MODULE, Cmds, HSR,
       R == ok))))).
+-endif.
 
 kill_all_pids(Pid) when is_pid(Pid) -> exit(Pid, kill);
 kill_all_pids([H|T])                -> kill_all_pids(H), kill_all_pids(T);
@@ -338,6 +340,7 @@ cleanup() ->
   % error_logger:tty(true),
   application:start(sidejob).
 
+-ifdef(PULSE).
 the_prop() -> prop_pulse().
 
 test({N, h})   -> test({N * 60, min});
@@ -375,6 +378,7 @@ pulse_instrument(File) ->
   code:purge(Mod),
   code:load_file(Mod),
   Mod.
+-endif.
 
 -ifdef(PULSE).
 eqc_test_() ->
