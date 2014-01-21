@@ -18,7 +18,7 @@
 -record(state, {limit, width, children = []}).
 -record(child, {pid}).
 
--import(eqc_statem, [eq/2, tag/2]).
+-import(eqc_statem, [tag/2]).
 
 -define(RESOURCE, resource).
 -define(SLEEP, 1).
