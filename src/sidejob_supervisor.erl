@@ -41,6 +41,7 @@
                 died=0}).
 
 -type resource() :: atom().
+-type mfa() :: {module(), atom(), term()}.
 
 %%%===================================================================
 %%% API
@@ -57,7 +58,7 @@ start_child(Name, Mod, Fun, Args) ->
             Other
     end.
 
--spec spawn(resource(), function()) -> {ok, pid()} | {error, overload}.
+-spec spawn(resource(), function() | mfa()) -> {ok, pid()} | {error, overload}.
 spawn(Name, Fun) ->
     case sidejob:call(Name, {spawn, Fun}, infinity) of
         overload ->
