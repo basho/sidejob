@@ -134,7 +134,11 @@ is_available(WorkerETS, Limit, Worker) ->
             false;
         0 ->
             Value = ets:update_counter(ETS, usage, 1),
-            [ ets:insert(ETS, {full, 1}) || Value >= Limit ],
+            if Value >= Limit ->
+                    ets:insert(ETS, {full, 1});
+               true ->
+                    ok
+            end,
             true
     end.
 
