@@ -57,7 +57,7 @@ start_child(Name, Mod, Fun, Args) ->
             Other
     end.
 
--spec spawn(resource(), function()) -> {ok, pid()} | {error, overload}.
+-spec spawn(resource(), function() | {module(), atom(), [term()]}) -> {ok, pid()} | {error, overload}.
 spawn(Name, Fun) ->
     case sidejob:call(Name, {spawn, Fun}, infinity) of
         overload ->
@@ -66,7 +66,7 @@ spawn(Name, Fun) ->
             Other
     end.
 
--spec spawn(resource(), module(), atom(), term()) -> {ok, pid()} |
+-spec spawn(resource(), module(), atom(), [term()]) -> {ok, pid()} |
                                                      {error, overload}.
 spawn(Name, Mod, Fun, Args) ->
     ?MODULE:spawn(Name, {Mod, Fun, Args}).
