@@ -54,9 +54,9 @@
                 mod             :: module(),
                 modstate        :: term(),
                 usage           :: custom | default,
-                last_mq_len = 0 :: pos_integer(),
-                enqueue     = 0 :: pos_integer(),
-                dequeue     = 0 :: pos_integer()}).
+                last_mq_len = 0 :: non_neg_integer(),
+                enqueue     = 0 :: non_neg_integer(),
+                dequeue     = 0 :: non_neg_integer()}).
 
 %%%===================================================================
 %%% API
