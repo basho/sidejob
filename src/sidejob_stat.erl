@@ -22,7 +22,8 @@
 
 -behaviour(exometer_entry).
 
--export([new/3, delete/3, get_value/4, update/4, reset/3,
+-export([behaviour/0,
+	 new/3, delete/3, get_value/4, update/4, reset/3,
 	 sample/3, get_datapoints/3, setopts/4]).
 
 -record(stat, {rejected = 0,
@@ -34,6 +35,9 @@
 
 -define(ADD(Field, Value), Field = Stat#stat.Field + Value).
 -define(MAX(Field, Value), Field = max(Stat#stat.Field, Value)).
+
+behaviour() ->
+    entry.
 
 new() ->
     #stat{}.
