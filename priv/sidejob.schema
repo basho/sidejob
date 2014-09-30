@@ -1,0 +1,4 @@
+%% -*- mode: erlang; erlang-indent-level: 4; indent-tabs-mode: nil -*-
+%% @doc Exometer metrics
+{mapping, "exometer.template.sidejob.module", "exometer.defaults",
+ [{default, "sidejob_stat"}]}.

@@ -18,8 +18,9 @@
 %%
 %% -------------------------------------------------------------------
 -module(sidejob).
--export([new_resource/3, new_resource/4, call/2, call/3, cast/2,
-         unbounded_cast/2]).
+-export([new_resource/3, new_resource/4, new_resource/5,
+	 call/2, call/3, cast/2, unbounded_cast/2,
+	 default_workers/0]).
 
 %%%===================================================================
 %%% API
@@ -35,6 +36,10 @@
 %% supervision hierarchy that manages this resource: ensuring that the workers
 %% and stats aggregation server for this resource remain running.
 new_resource(Name, Mod, Limit, Workers) ->
+    new_resource(Name, Mod, Limit, Workers, []).
+
+
+new_resource(Name, Mod, Limit, Workers, Conf) ->
     StatsETS = sidejob_resource_sup:stats_ets(Name),
     WorkerNames = sidejob_worker:workers(Name, Workers),
     StatsName = sidejob_resource_stats:reg_name(Name),
@@ -45,16 +50,17 @@ new_resource(Name, Mod, Limit, Workers) ->
                                       {stats_ets, StatsETS},
                                       {workers, list_to_tuple(WorkerNames)},
                                       {worker_ets, list_to_tuple(WorkerNames)},
-                                      {stats, StatsName}]),
+                                      {stats, StatsName} | Conf]),
     sidejob_sup:add_resource(Name, Mod).
 
 %% @doc
 %% Same as {@link new_resource/4} except that the number of workers defaults
 %% to the number of scheduler threads.
 new_resource(Name, Mod, Limit) ->
-    Workers = erlang:system_info(schedulers),
-    new_resource(Name, Mod, Limit, Workers).
+    new_resource(Name, Mod, Limit, default_workers()).
 
+default_workers() ->
+    erlang:system_info(schedulers).
 
 %% @doc
 %% Same as {@link call/3} with a default timeout of 5 seconds.
