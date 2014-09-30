@@ -24,7 +24,7 @@
 
 -export([behaviour/0,
 	 new/3, delete/3, get_value/4, update/4, reset/3,
-	 sample/3, get_datapoints/3, setopts/4]).
+	 sample/3, get_datapoints/3, setopts/3]).
 
 -record(stat, {rejected = 0,
                in_sum   = 0,
@@ -92,4 +92,4 @@ get_datapoints(_, _, _) ->
      max_out_rate_60s, usage_total, rejected_total,
      avg_in_rate_total, max_in_rate_total, avg_out_rate_total].
 
-setopts(_, _, _, _) -> {error, not_supported}.
+setopts(_, _, _) -> ok.
