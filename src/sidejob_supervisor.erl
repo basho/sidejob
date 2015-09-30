@@ -120,17 +120,17 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-handle_info({'EXIT', Pid, Reason}, State=#state{children=Children,
+handle_info({'EXIT', Pid, _Reason}, State=#state{children=Children,
                                                 died=Died}) ->
-    case sets:is_element(Pid, Children) of
+    State2 = case sets:is_element(Pid, Children) of
         true ->
             Children2 = sets:del_element(Pid, Children),
             Died2 = Died + 1,
-            State2 = State#state{children=Children2, died=Died2},
-            {noreply, State2};
+            State#state{children=Children2, died=Died2};
         false ->
-            {stop, Reason, State}
-    end;
+            State
+    end,
+    {noreply, State2};
 
 handle_info(_Info, State) ->
     {noreply, State}.
