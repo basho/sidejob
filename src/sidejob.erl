@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(sidejob).
 -export([new_resource/3, new_resource/4, call/2, call/3, cast/2,
-         unbounded_cast/2]).
+         unbounded_cast/2, resource_exists/1]).
 
 %%%===================================================================
 %%% API
@@ -89,6 +89,20 @@ cast(Name, Msg) ->
 unbounded_cast(Name, Msg) ->
     Worker = preferred_worker(Name),
     gen_server:cast(Worker, Msg).
+
+%%% @doc
+%% Check if the specified resource exists. Erlang docs call out that
+%% using erlang:module_exists should not be used, so try to call
+%% a function on the module in question and, if it succeeds, return
+%% true. Otherwise, the module hasn't been created so return false.
+-spec resource_exists(Mod::atom()) -> boolean().
+resource_exists(Mod) ->
+    try
+        _ = Mod:width(),
+        true
+    catch _:_ ->
+        false
+    end.
 
 %%%===================================================================
 %%% Internal functions
