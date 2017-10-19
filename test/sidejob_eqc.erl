@@ -325,7 +325,7 @@ prop_seq() ->
   begin
     cleanup(),
     HSR={_, S, R} = run_commands(?MODULE, Cmds),
-    [ exit(Pid, kill) || #worker{ pid = Pid } <- S#state.workers ],
+    [ exit(Pid, kill) || #worker{ pid = Pid } <- S#state.workers, is_pid(Pid) ],
     aggregate(command_names(Cmds),
     pretty_commands(?MODULE, Cmds, HSR,
       R == ok))
