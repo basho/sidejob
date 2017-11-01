@@ -321,7 +321,7 @@ status_keeper(State) ->
 prop_seq() ->
   ?FORALL(Cmds, commands(?MODULE),
   ?TIMEOUT(?TIMEOUT,
-  ?SOMETIMES(4,
+  ?SOMETIMES(10,
   begin
     cleanup(),
     HSR={_, S, R} = run_commands(?MODULE, Cmds),
