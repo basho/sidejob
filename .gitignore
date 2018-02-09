@@ -2,3 +2,4 @@
 .*.swp
 ebin/sidejob.app
 .eunit
+_build

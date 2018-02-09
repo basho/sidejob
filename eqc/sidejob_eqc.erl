@@ -4,16 +4,18 @@
 %%% Created     : 13 May 2013 by Ulf Norell
 -module(sidejob_eqc).
 
--compile(export_all).
-
--ifdef(EQC).
 -include_lib("eqc/include/eqc_statem.hrl").
 -include_lib("eqc/include/eqc.hrl").
 -ifdef(PULSE).
+-export([prop_pulse/0, pulse_instrument/0, pulse_instrument/1]).
 -include_lib("pulse/include/pulse.hrl").
 -endif.
 
--include_lib("eunit/include/eunit.hrl").
+-export([initial_state/0]).
+-export([prop_seq/0, prop_par/0]).
+-export([work/2, finish_work/1, crash/1, get_element/2, get_status/1]).
+-export([new_resource_command/1,
+         new_resource_pre/1, new_resource_next/3, new_resource_post/3]).
 
 -record(state, {limit, width, restarts = 0, workers = []}).
 -record(worker, {pid, scheduler, queue, status = ready, cmd}).
@@ -372,25 +374,6 @@ cleanup() ->
   application:start(sidejob).
 
 -ifdef(PULSE).
-the_prop() -> prop_pulse().
-
-test({N, h})   -> test({N * 60, min});
-test({N, min}) -> test({N * 60, sec});
-test({N, s})   -> test({N, sec});
-test({N, sec}) ->
-  quickcheck(eqc:testing_time(N, the_prop()));
-test(N) when is_integer(N) ->
-  quickcheck(numtests(N, the_prop())).
-
-test() -> test(100).
-
-recheck() -> eqc:recheck(the_prop()).
-check()   -> eqc:check(the_prop()).
-check(CE) -> eqc:check(the_prop(), CE).
-
-verbose()   -> eqc:check(eqc_statem:show_states(the_prop())).
-verbose(CE) -> eqc:check(eqc_statem:show_states(the_prop(), CE)).
-
 pulse_instrument() ->
   [ pulse_instrument(File) || File <- filelib:wildcard("../src/*.erl") ++
                                       filelib:wildcard("../test/*.erl") ].
@@ -411,22 +394,3 @@ pulse_instrument(File) ->
   code:load_file(Mod),
   Mod.
 -endif.
-
--ifdef(PULSE).
-eqc_test_() ->
-    {timeout, 30,
-     fun() ->
-             ?assert(eqc:quickcheck(eqc:testing_time(5, ?QC_OUT(prop_pulse()))))
-     end
-    }.
--else.
-eqc_test_() ->
-    {timeout, 30,
-     fun() ->
-             ?assert(eqc:quickcheck(eqc:testing_time(5, ?QC_OUT(prop_seq())))),
-             ?assert(eqc:quickcheck(eqc:testing_time(5, ?QC_OUT(prop_par()))))
-     end
-    }.
--endif.
-
--endif.                                         % top-level EQC

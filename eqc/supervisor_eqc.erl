@@ -4,16 +4,26 @@
 %%% Created     : 15 May 2013 by Ulf Norell
 -module(supervisor_eqc).
 
--compile(export_all).
+-export([prop_seq/0, prop_par/0]).
 
--ifdef(EQC).
+-export([initial_state/0, start_worker/0]).
+-export([new_resource/1, new_resource/2, new_resource_args/1,
+         new_resource_pre/1, new_resource_next/3, new_resource_post/3]).
+
+-export([work/2, work_args/1,
+         work_pre/1, work_next/3, work_post/3]).
+
+-export([terminate/2, terminate_args/1,
+         terminate_pre/1, terminate_next/3]).
+
+
+
 -include_lib("eqc/include/eqc_statem.hrl").
 -include_lib("eqc/include/eqc.hrl").
 -ifdef(PULSE).
+-export([prop_pulse/0]).
 -include_lib("pulse/include/pulse.hrl").
 -endif.
-
--include_lib("eunit/include/eunit.hrl").
 
 -record(state, {limit, width, children = [],
                 %% there is a bug in the supervisor that actually
@@ -168,12 +178,6 @@ weight(_, terminate)      -> 4;
 weight(_, which_children) -> 1;
 weight(_, _)              -> 1.
 
-%% -- Helpers ----------------------------------------------------------------
-
-assert(_, true)  -> true;
-assert(T, false) -> T;
-assert(T, X)     -> {T, X}.
-
 %% -- Workers and proxies ----------------------------------------------------
 
 worker() ->
@@ -248,45 +252,3 @@ cleanup() ->
   (catch application:stop(sidejob)),
   % error_logger:tty(true),
   application:start(sidejob).
-
-the_prop() -> prop_par().
-
-test({N, h})   -> test({N * 60, min});
-test({N, min}) -> test({N * 60, sec});
-test({N, s})   -> test({N, sec});
-test({N, sec}) ->
-  quickcheck(eqc:testing_time(N, the_prop()));
-test(N) when is_integer(N) ->
-  quickcheck(numtests(N, the_prop())).
-
-test() -> test(100).
-
-recheck() -> eqc:recheck(the_prop()).
-check()   -> eqc:check(the_prop()).
-check(CE) -> eqc:check(the_prop(), CE).
-
-verbose()   -> eqc:check(eqc_statem:show_states(the_prop())).
-verbose(CE) -> eqc:check(eqc_statem:show_states(the_prop(), CE)).
-
--ifdef(PULSE).
-eqc_test_() ->
-    {timeout, 30,
-     fun() ->
-             ?assert(eqc:quickcheck(eqc:testing_time(5, ?QC_OUT(prop_pulse()))))
-     end
-    }.
-
--else.
-eqc_test_() ->
-    {timeout, 30,
-     fun() ->
-             ?assert(eqc:quickcheck(eqc:testing_time(5, ?QC_OUT(prop_seq()))))
-             %% XXX TODO: disabled while sidejob is broken, despite
-             %% fuzzing and all else, it still fails, and maybe beyond
-             %% fixing
-             %% ?assert(eqc:quickcheck(eqc:testing_time(5, ?QC_OUT(prop_par()))))
-     end
-    }.
--endif.
-
--endif.                                         % top-level EQC

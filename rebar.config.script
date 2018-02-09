@@ -1,10 +1,9 @@
-{erl_opts, [debug_info, warnings_as_errors]}.
-{cover_enabled, true}.
-{eunit_opts, [verbose]}.
-{edoc_opts, [{preprocess, true}]}.
-{deps, []}.
-
-{eunit_compile_opts, [{d, 'PULSE', true},
+case os:getenv("PULSE") of
+    false ->
+        CONFIG;
+    _ ->
+        ErlOpts = proplists:get_value(erl_opts, CONFIG, []),
+        NewErlOpts = {erl_opts, [{d, 'PULSE', true},
                       {parse_transform, pulse_instrument},
                       {pulse_side_effect, [{ets, '_', '_'}]},
                       {pulse_replace_module, [{application, pulse_application},
@@ -16,4 +15,6 @@
                                               {gen_fsm, pulse_gen_fsm},
                                               {gen_server, pulse_gen_server},
                                               {proc_lib, pulse_proc_lib},
-                                              {supervisor, pulse_supervisor}]}]}.
+                                              {supervisor, pulse_supervisor}]}|ErlOpts]},
+        lists:keystore(erl_opts, 1, CONFIG, NewErlOpts)
+end.

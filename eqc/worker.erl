@@ -4,8 +4,6 @@
 %%% Created     : 13 May 2013 by Ulf Norell
 -module(worker).
 
--compile(export_all).
-
 -behaviour(gen_server).
 
 %% API

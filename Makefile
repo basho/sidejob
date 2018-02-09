@@ -1,25 +1,22 @@
-.PHONY: rel deps test
+.PHONY: compile rel cover test dialyzer
+REBAR=./rebar3
 
-all: deps compile
-
-compile: deps
-	@./rebar compile
-
-app:
-	@./rebar compile skip_deps=true
-
-deps:
-	@./rebar get-deps
+compile:
+	$(REBAR) compile
 
 clean:
-	@./rebar clean
+	$(REBAR) clean
 
-distclean: clean
-	@./rebar delete-deps
+cover: test
+	$(REBAR) cover
 
-DIALYZER_APPS = kernel stdlib sasl erts compiler syntax_tools
+test: compile
+	$(REBAR) as test do eunit
 
-include tools.mk
+dialyzer:
+	$(REBAR) dialyzer
 
-typer:
-	typer --annotate -I ../ --plt $(PLT) -r src
+xref:
+	$(REBAR) xref
+
+check: test dialyzer xref
