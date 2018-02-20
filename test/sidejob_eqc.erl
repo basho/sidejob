@@ -59,8 +59,8 @@ new_resource_post(_, _, V) ->
 
 %% -- work
 work(Cmd, Scheduler) ->
-  Worker = spawn_opt(fun worker/0, [{scheduler, Scheduler}]),
-  Worker ! {Cmd, self()},
+  status_keeper ! {start_worker, self(), Cmd, Scheduler},
+  Worker = receive {start_worker, Worker0} -> Worker0 end,
   timer:sleep(?SLEEP),
   {Worker, get_status(Worker)}.
 
@@ -101,8 +101,8 @@ work_post(S, [Cmd, Sched], {Pid, Status}) ->
 
 %% -- get_status
 get_status(Worker) ->
+  status_keeper ! {get_status, self(), Worker},
   receive {Worker, R} -> R
-  after ?SLEEP -> blocked
   end.
 
 get_status_args(S) ->
@@ -286,16 +286,46 @@ worker() ->
         From ! {self(), Res}
   end.
 
+%% -- Status keeper ----------------------------------------------------------
+%% When running with parallel_commands we need a proxy process that holds the
+%% statuses of the workers.
+start_status_keeper() ->
+  catch erlang:exit(whereis(status_keeper), kill),
+  timer:sleep(?SLEEP),
+  register(status_keeper, spawn(fun() -> status_keeper([]) end)).
+
+status_keeper(State) ->
+  receive
+    {start_worker, From, Cmd, Scheduler} ->
+      Worker = spawn_opt(fun worker/0, [{scheduler, Scheduler}]),
+      Worker ! {Cmd, self()},
+      timer:sleep(?SLEEP),
+      From ! {start_worker, Worker},
+      status_keeper([{worker, Worker, []} | State]);
+    {Worker, Status} when is_pid(Worker) ->
+      {worker, Worker, OldStatus} = lists:keyfind(Worker, 2, State),
+      status_keeper(lists:keystore(Worker, 2, State, {worker, Worker, OldStatus ++ [Status]}));
+    {get_status, From, Worker} ->
+      case lists:keyfind(Worker, 2, State) of
+        {worker, Worker, [Status | NewStatus]} ->
+          From ! {Worker, Status},
+          status_keeper(lists:keystore(Worker, 2, State, {worker, Worker, NewStatus}));
+        _ ->
+          From ! {Worker, blocked},
+          status_keeper(State)
+      end
+  end.
+
 %% -- Property ---------------------------------------------------------------
 
 prop_seq() ->
   ?FORALL(Cmds, commands(?MODULE),
   ?TIMEOUT(?TIMEOUT,
-  ?SOMETIMES(4,
+  ?SOMETIMES(10,
   begin
     cleanup(),
     HSR={_, S, R} = run_commands(?MODULE, Cmds),
-    [ exit(Pid, kill) || #worker{ pid = Pid } <- S#state.workers ],
+    [ exit(Pid, kill) || #worker{ pid = Pid } <- S#state.workers, is_pid(Pid) ],
     aggregate(command_names(Cmds),
     pretty_commands(?MODULE, Cmds, HSR,
       R == ok))
@@ -335,6 +365,7 @@ kill_all_pids(T) when is_tuple(T)   -> kill_all_pids(tuple_to_list(T));
 kill_all_pids(_)                    -> ok.
 
 cleanup() ->
+  start_status_keeper(),
   error_logger:tty(false),
   (catch application:stop(sidejob)),
   % error_logger:tty(true),
@@ -371,7 +402,8 @@ pulse_instrument(File) ->
   ReplaceModules =
     [{Mod, list_to_atom(lists:concat([pulse_, Mod]))}
       || Mod <- Modules],
-  {ok, Mod} = compile:file(File, [{d, 'PULSE', true},
+    io:format("compiling ~p~n", [File]),
+  {ok, Mod} = compile:file(File, [{d, 'PULSE', true}, {d, 'EQC', true},
                                   {parse_transform, pulse_instrument},
                                   {pulse_side_effect, [{ets, '_', '_'}]},
                                   {pulse_replace_module, ReplaceModules}]),
