@@ -1,6 +1,6 @@
 {application, sidejob,
  [
-  {description, "Parallel worker and capacity limiting"},
+  {description, "Parallel worker and capacity limiting library"},
   {vsn, git},
   {registered, []},
   {applications, [
