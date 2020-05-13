@@ -4,7 +4,10 @@
 %%% Created     : 15 May 2013 by Ulf Norell
 -module(supervisor_eqc).
 
--export([prop_seq/0, prop_par/0]).
+-export([
+            prop_seq/0 %, 
+            % prop_par/0
+        ]).
 
 -export([initial_state/0, start_worker/0]).
 -export([new_resource/1, new_resource/2, new_resource_args/1,
@@ -16,7 +19,7 @@
 -export([terminate/2, terminate_args/1,
          terminate_pre/1, terminate_next/3]).
 
-
+-export([worker/0, kill_all_pids/1]).
 
 -include_lib("eqc/include/eqc_statem.hrl").
 -include_lib("eqc/include/eqc.hrl").
@@ -103,7 +106,7 @@ work_pre(S) ->
   S#state.limit /= undefined.
 
 work_next(S, V, [_Cmd, _Sched]) ->
-  case length(S#state.children) < S#state.fuzz_limit of
+  case length(S#state.children) =< S#state.fuzz_limit of
     false -> S;
     true  -> S#state{ children = S#state.children ++ [#child{pid = V}] }
   end.
@@ -214,18 +217,18 @@ prop_seq() ->
       R == ok))
   end))).
 
-prop_par() ->
-  ?FORALL(Cmds, parallel_commands(?MODULE),
-  ?TIMEOUT(?TIMEOUT,
-  % ?SOMETIMES(4,
-  begin
-    cleanup(),
-    HSR={SeqH, ParH, R} = run_parallel_commands(?MODULE, Cmds),
-    kill_all_pids({SeqH, ParH}),
-    aggregate(command_names(Cmds),
-    pretty_commands(?MODULE, Cmds, HSR,
-      R == ok))
-  end)).
+% prop_par() ->
+%   ?FORALL(Cmds, parallel_commands(?MODULE),
+%   ?TIMEOUT(?TIMEOUT,
+%   % ?SOMETIMES(4,
+%   begin
+%     cleanup(),
+%     HSR={SeqH, ParH, R} = run_parallel_commands(?MODULE, Cmds),
+%     kill_all_pids({SeqH, ParH}),
+%     aggregate(command_names(Cmds),
+%     pretty_commands(?MODULE, Cmds, HSR,
+%       R == ok))
+%   end)).
 
 -ifdef(PULSE).
 prop_pulse() ->

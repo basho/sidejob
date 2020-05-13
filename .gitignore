@@ -3,3 +3,4 @@
 ebin/sidejob.app
 .eunit
 _build
+.eqc-info

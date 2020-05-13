@@ -12,10 +12,15 @@
 -endif.
 
 -export([initial_state/0]).
--export([prop_seq/0, prop_par/0]).
+-export([
+            prop_seq/0 %,
+            % prop_par/0
+        ]).
 -export([work/2, finish_work/1, crash/1, get_element/2, get_status/1]).
 -export([new_resource_command/1,
          new_resource_pre/1, new_resource_next/3, new_resource_post/3]).
+
+-export([worker/0, kill_all_pids/1]).
 
 -record(state, {limit, width, restarts = 0, workers = []}).
 -record(worker, {pid, scheduler, queue, status = ready, cmd}).
@@ -333,18 +338,18 @@ prop_seq() ->
       R == ok))
   end))).
 
-prop_par() ->
-  ?FORALL(Cmds, parallel_commands(?MODULE),
-  ?TIMEOUT(?TIMEOUT,
-  % ?SOMETIMES(4,
-  begin
-    cleanup(),
-    HSR={SeqH, ParH, R} = run_parallel_commands(?MODULE, Cmds),
-    kill_all_pids({SeqH, ParH}),
-    aggregate(command_names(Cmds),
-    pretty_commands(?MODULE, Cmds, HSR,
-      R == ok))
-  end)).
+% prop_par() ->
+%   ?FORALL(Cmds, parallel_commands(?MODULE),
+%   ?TIMEOUT(?TIMEOUT,
+%   % ?SOMETIMES(4,
+%   begin
+%     cleanup(),
+%     HSR={SeqH, ParH, R} = run_parallel_commands(?MODULE, Cmds),
+%     kill_all_pids({SeqH, ParH}),
+%     aggregate(command_names(Cmds),
+%     pretty_commands(?MODULE, Cmds, HSR,
+%       R == ok))
+%   end)).
 
 -ifdef(PULSE).
 prop_pulse() ->
