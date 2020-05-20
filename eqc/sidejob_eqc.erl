@@ -22,8 +22,9 @@
 
 -import(eqc_statem, [tag/2]).
 
+-compile(nowarn_unused_function).
+
 -define(RESOURCE, resource).
--define(SLEEP, 1).
 -define(TIMEOUT, 5000).
 -define(RESTART_LIMIT, 10).
 
@@ -61,9 +62,20 @@ new_resource_post(_, _, V) ->
 
 %% -- work
 work(Cmd, Scheduler) ->
+    {Worker, Status} = work0 (Cmd, Scheduler),
+    case Status of
+	overload ->
+	    %% Temporary overload is not necessarily a problem--there
+	    %% may be workers stopping/dying/being replaced.
+	    wait_until_quiescent(),
+	    work0(Cmd, Scheduler);
+	_ ->
+	    {Worker, Status}
+    end.
+
+work0(Cmd, Scheduler) ->
   status_keeper ! {start_worker, self(), Cmd, Scheduler},
   Worker = receive {start_worker, Worker0} -> Worker0 end,
-  timer:sleep(?SLEEP),
   {Worker, get_status(Worker)}.
 
 -ifdef(PULSE).
@@ -103,6 +115,15 @@ work_post(S, [Cmd, Sched], {Pid, Status}) ->
 
 %% -- get_status
 get_status(Worker) ->
+    case get_status0(Worker) of
+	blocked ->
+	    %% May just not have started yet
+	    wait_until_quiescent(),
+	    get_status0 (Worker);
+	R -> R
+    end.
+
+get_status0(Worker) ->
   status_keeper ! {get_status, self(), Worker},
   receive {Worker, R} -> R
   end.
@@ -145,8 +166,7 @@ get_status_post(S, [WPid], R) ->
 %% -- finish
 finish_work(bad_element) -> ok;
 finish_work(Pid) ->
-  Pid ! finish,
-  timer:sleep(?SLEEP).
+  Pid ! finish.
 
 finish_work_args(S) ->
   [elements(working_workers(S))].
@@ -169,8 +189,7 @@ finish_work_next(S, _, [Pid]) ->
 %. -- crash
 crash(bad_element) -> ok;
 crash(Pid) ->
-  Pid ! crash,
-  timer:sleep(?SLEEP).
+  Pid ! crash.
 
 crash_args(S) ->
   [elements(working_workers(S))].
@@ -292,8 +311,10 @@ worker() ->
 %% When running with parallel_commands we need a proxy process that holds the
 %% statuses of the workers.
 start_status_keeper() ->
-  catch erlang:exit(whereis(status_keeper), kill),
-  timer:sleep(?SLEEP),
+  case whereis(status_keeper) of
+    undefined -> ok;
+    Pid -> unregister(status_keeper), exit(Pid,kill)
+  end,
   register(status_keeper, spawn(fun() -> status_keeper([]) end)).
 
 status_keeper(State) ->
@@ -301,7 +322,6 @@ status_keeper(State) ->
     {start_worker, From, Cmd, Scheduler} ->
       Worker = spawn_opt(fun worker/0, [{scheduler, Scheduler}]),
       Worker ! {Cmd, self()},
-      timer:sleep(?SLEEP),
       From ! {start_worker, Worker},
       status_keeper([{worker, Worker, []} | State]);
     {Worker, Status} when is_pid(Worker) ->
@@ -313,17 +333,19 @@ status_keeper(State) ->
           From ! {Worker, Status},
           status_keeper(lists:keystore(Worker, 2, State, {worker, Worker, NewStatus}));
         _ ->
-          From ! {Worker, blocked},
-          status_keeper(State)
+	      From ! {Worker, blocked},
+	      status_keeper(State)
       end
   end.
 
 %% -- Property ---------------------------------------------------------------
 
 prop_seq() ->
+  ?FORALL(Repetitions,?SHRINK(1,[1000]),
   ?FORALL(Cmds, commands(?MODULE),
+  ?ALWAYS(Repetitions,
   ?TIMEOUT(?TIMEOUT,
-  ?SOMETIMES(10,
+  ?SOMETIMES(1,%10,
   begin
     cleanup(),
     HSR={_, S, R} = run_commands(?MODULE, Cmds),
@@ -331,7 +353,7 @@ prop_seq() ->
     aggregate(command_names(Cmds),
     pretty_commands(?MODULE, Cmds, HSR,
       R == ok))
-  end))).
+  end))))).
 
 prop_par() ->
   ?FORALL(Cmds, parallel_commands(?MODULE),
@@ -394,3 +416,25 @@ pulse_instrument(File) ->
   code:load_file(Mod),
   Mod.
 -endif.
+
+%% Wait for quiescence: needed to observe that sidejob is NOT starting a task.
+
+busy_processes() ->
+    [Pid || Pid <- processes(),
+	    {status,Status} <- [erlang:process_info(Pid,status)],
+	    Status /= waiting,
+	    Status /= suspended].
+
+quiescent() ->
+    busy_processes() == [self()].
+
+wait_until_quiescent() ->
+    timer:sleep(1),
+    case quiescent() of
+	true ->
+	    ok;
+	false ->
+	    io:format("Not quiescent\n"),
+	    timer:sleep(1),
+	    wait_until_quiescent()
+    end.
