@@ -1,6 +1,6 @@
 %%% File        : supervisor_eqc.erl
 %%% Author      : Ulf Norell
-%%% Description : 
+%%% Description :
 %%% Created     : 15 May 2013 by Ulf Norell
 -module(supervisor_eqc).
 
@@ -40,9 +40,6 @@
 -define(SLEEP, 1).
 -define(TIMEOUT, 5000).
 -define(RESTART_LIMIT, 10).
-
--define(QC_OUT(P),
-        eqc:on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
 
 initial_state() ->
   #state{}.
