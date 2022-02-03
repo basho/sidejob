@@ -1,5 +1,7 @@
 (TODO: Write a better README. Current text is copied from [sidejob#1](https://github.com/basho/sidejob/pull/1))
 
+[![Erlang CI Actions Status](https://github.com/basho/sidejob/workflows/Erlang%20CI/badge.svg)](https://github.com/basho/sidejob/actions)
+
 Note: this library was originally written to support process bounding in Riak using the sidejob_supervisor behavior. In Riak, this is used to limit the number of concurrent get/put FSMs that can be active, failing client requests with {error, overload} if the limit is ever hit. The purpose being to provide a fail-safe mechanism during extreme overload scenarios.
 
 sidejob is an Erlang library that implements a parallel, capacity-limited request pool. In sidejob, these pools are called resources. A resource is managed by multiple gen_server like processes which can be sent calls and casts using sidejob:call or sidejob:cast respectively.
